@@ -125,7 +125,7 @@
 
         .container {
             padding: 30px 20px 60px;
-            max-width: 500px;
+            max-width: 700px;
             margin: 0 auto;
             position: relative;
             z-index: 10;
@@ -260,9 +260,12 @@
             display: flex;
             gap: 15px;
             overflow-x: auto;
-            padding-bottom: 10px;
+            padding-bottom: 15px;
             scrollbar-width: thin;
             scrollbar-color: var(--moomin-lavender) transparent;
+            scroll-behavior: smooth;
+            /* 確保可以看到所有7天 */
+            min-height: 200px;
         }
 
         .story-chapters::-webkit-scrollbar {
@@ -295,6 +298,13 @@
             transform: translateY(-5px);
         }
 
+        .chapter-card.today-card {
+            background: linear-gradient(145deg, 
+                var(--moomin-yellow) 0%, 
+                var(--moomin-pink) 100%);
+            border: 2px solid var(--moomin-deep-blue);
+        }
+
         .chapter-time {
             background: rgba(255, 255, 255, 0.8);
             color: var(--moomin-deep-blue);
@@ -303,6 +313,13 @@
             font-size: 0.85rem;
             font-weight: 600;
             display: inline-block;
+            margin-bottom: 5px;
+        }
+
+        .chapter-date {
+            font-size: 0.9rem;
+            color: var(--moomin-text);
+            font-weight: 600;
             margin-bottom: 10px;
         }
 
@@ -365,6 +382,23 @@
             color: var(--moomin-light-text);
             font-style: italic;
         }
+
+        /* 響應式設計 - 桌面版本 */
+        @media (min-width: 768px) {
+            .story-chapters {
+                justify-content: center;
+                gap: 20px;
+                padding: 0 20px 15px;
+            }
+            
+            .chapter-card {
+                min-width: 140px;
+            }
+            
+            .container {
+                max-width: 1000px;
+            }
+        }
     </style>
 </head>
 
@@ -392,7 +426,7 @@
         <div class="container">
             <div id="currentWeather"></div>
 
-            <h2 class="future-title">接下來的天氣故事</h2>
+            <h2 class="future-title">本週的天氣故事</h2>
             <div class="story-chapters" id="futureWeather"></div>
         </div>
 
@@ -447,78 +481,132 @@
             return { umbrella, clothes };
         }
 
-        // 童話風格的時段描述
-        function getStoryTime(startTime) {
-            const hour = new Date(startTime).getHours();
-            if (hour >= 5 && hour < 11) return "清晨篇章";
-            if (hour >= 11 && hour < 14) return "午間童話";
-            if (hour >= 14 && hour < 18) return "午後冒險";
-            if (hour >= 18 && hour < 23) return "夜晚序曲";
-            return "深夜夢境";
+        // 取得星期幾的童話名稱
+        function getWeekdayStory(date) {
+            const days = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+            const storyDays = ["太陽日", "月亮日", "火星日", "水星日", "木星日", "金星日", "土星日"];
+            const index = date.getDay();
+            return storyDays[index];
+        }
+
+        // 將預報資料按天分組
+        function groupForecastsByDay(forecasts) {
+            const dayGroups = new Map();
+            
+            forecasts.forEach(forecast => {
+                const date = new Date(forecast.startTime);
+                const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+                
+                if (!dayGroups.has(dateKey)) {
+                    dayGroups.set(dateKey, {
+                        date: date,
+                        forecasts: [],
+                        maxTemp: -Infinity,
+                        minTemp: Infinity,
+                        weather: null,
+                        rainProb: 0
+                    });
+                }
+                
+                const group = dayGroups.get(dateKey);
+                group.forecasts.push(forecast);
+                group.maxTemp = Math.max(group.maxTemp, parseInt(forecast.maxTemp));
+                group.minTemp = Math.min(group.minTemp, parseInt(forecast.minTemp));
+                group.rainProb = Math.max(group.rainProb, parseInt(forecast.rain));
+                
+                // 使用中午時段的天氣作為當天代表
+                const hour = new Date(forecast.startTime).getHours();
+                if (hour >= 11 && hour <= 14) {
+                    group.weather = forecast.weather;
+                }
+            });
+            
+            // 如果沒有中午的天氣，使用第一個時段
+            dayGroups.forEach(group => {
+                if (!group.weather && group.forecasts.length > 0) {
+                    group.weather = group.forecasts[0].weather;
+                }
+            });
+            
+            return Array.from(dayGroups.values());
         }
 
         function renderWeather(data) {
             const forecasts = data.forecasts;
-            const current = forecasts[0];
-            const others = forecasts.slice(1);
+            const dayGroups = groupForecastsByDay(forecasts);
+            
+            // 確保至少有7天的資料（如果API沒提供足夠資料，用最後一天填充）
+            while (dayGroups.length < 7 && dayGroups.length > 0) {
+                const lastDay = dayGroups[dayGroups.length - 1];
+                const newDate = new Date(lastDay.date);
+                newDate.setDate(newDate.getDate() + 1);
+                dayGroups.push({
+                    date: newDate,
+                    forecasts: lastDay.forecasts,
+                    maxTemp: lastDay.maxTemp,
+                    minTemp: lastDay.minTemp,
+                    weather: lastDay.weather,
+                    rainProb: lastDay.rainProb
+                });
+            }
 
-            // 渲染當前天氣
-            const advice = getStoryAdvice(current.rain, current.maxTemp);
-            const avgTemp = Math.round((parseInt(current.maxTemp) + parseInt(current.minTemp)) / 2);
+            const today = dayGroups[0];
+            if (today) {
+                // 渲染今天的天氣
+                const advice = getStoryAdvice(today.rainProb, today.maxTemp);
+                const avgTemp = Math.round((today.maxTemp + today.minTemp) / 2);
 
-            document.getElementById('currentWeather').innerHTML = `
-                <div class="weather-story-card">
-                    <div class="stars">✨</div>
-                    <div class="weather-icon-large">${getWeatherIcon(current.weather)}</div>
-                    <div class="temperature-display">
-                        <div class="temp-number">${avgTemp}°</div>
-                        <div class="weather-description">${current.weather}</div>
-                    </div>
-                    
-                    <div class="story-advice">
-                        <div class="advice-title">今日的小建議</div>
-                        <div class="advice-items">
-                            <div class="advice-bubble">
-                                <div class="advice-emoji">${advice.umbrella.emoji}</div>
-                                <div class="advice-text">${advice.umbrella.text}</div>
-                            </div>
-                            <div class="advice-bubble">
-                                <div class="advice-emoji">${advice.clothes.emoji}</div>
-                                <div class="advice-text">${advice.clothes.text}</div>
+                document.getElementById('currentWeather').innerHTML = `
+                    <div class="weather-story-card">
+                        <div class="stars">✨</div>
+                        <div class="weather-icon-large">${getWeatherIcon(today.weather)}</div>
+                        <div class="temperature-display">
+                            <div class="temp-number">${avgTemp}°</div>
+                            <div class="weather-description">${today.weather}</div>
+                        </div>
+                        
+                        <div class="story-advice">
+                            <div class="advice-title">今日的小建議</div>
+                            <div class="advice-items">
+                                <div class="advice-bubble">
+                                    <div class="advice-emoji">${advice.umbrella.emoji}</div>
+                                    <div class="advice-text">${advice.umbrella.text}</div>
+                                </div>
+                                <div class="advice-bubble">
+                                    <div class="advice-emoji">${advice.clothes.emoji}</div>
+                                    <div class="advice-text">${advice.clothes.text}</div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
 
-            // 渲染未來預報
+            // 渲染一週預報
             const futureContainer = document.getElementById('futureWeather');
             futureContainer.innerHTML = '';
 
-            const todayDate = new Date().getDate();
-            
-            others.forEach(f => {
-                let timeLabel = getStoryTime(f.startTime);
-                const fDate = new Date(f.startTime);
-                if (fDate.getDate() !== todayDate) {
-                    timeLabel = "明日" + timeLabel.substring(2);
-                }
-
+            dayGroups.forEach((dayGroup, index) => {
+                const dateStr = `${dayGroup.date.getMonth() + 1}/${dayGroup.date.getDate()}`;
+                const weekday = getWeekdayStory(dayGroup.date);
+                const isToday = index === 0;
+                
                 futureContainer.innerHTML += `
-                    <div class="chapter-card">
-                        <div class="chapter-time">${timeLabel}</div>
-                        <div class="chapter-icon">${getWeatherIcon(f.weather)}</div>
-                        <div class="chapter-temp">${f.minTemp}° - ${f.maxTemp}°</div>
-                        <div class="chapter-rain">雨滴機率 ${f.rain}</div>
+                    <div class="chapter-card ${isToday ? 'today-card' : ''}">
+                        <div class="chapter-time">${isToday ? '今日' : weekday}</div>
+                        <div class="chapter-date">${dateStr}</div>
+                        <div class="chapter-icon">${getWeatherIcon(dayGroup.weather)}</div>
+                        <div class="chapter-temp">${dayGroup.minTemp}° - ${dayGroup.maxTemp}°</div>
+                        <div class="chapter-rain">雨滴機率 ${dayGroup.rainProb}%</div>
                     </div>
                 `;
             });
 
             // 更新日期顯示
             const now = new Date();
-            const options = { month: 'long', day: 'numeric', weekday: 'long' };
+            const options = { month: 'long', day: 'numeric' };
             const dateStr = now.toLocaleDateString('zh-TW', options);
-            document.getElementById('dateDisplay').textContent = `${dateStr}的天氣故事`;
+            document.getElementById('dateDisplay').textContent = `從${dateStr}開始的一週天氣故事`;
         }
 
         async function fetchWeather() {
