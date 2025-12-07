@@ -470,10 +470,22 @@
     <script>
         const API_URL = "https://personal-cwaweather-backend.zeabur.app/api/weather/taipei";
 
-        // 童話風格的天氣圖標
-        function getWeatherIcon(weather) {
-            if (!weather) return "🌈";
-            if (weather.includes("晴")) return "🌞";
+        // 童話風格的天氣圖標 - 考慮降雨機率
+        function getWeatherIcon(weather, rainProb) {
+            // 如果降雨機率高，優先顯示雨天相關圖標
+            const rain = parseInt(rainProb || 0);
+            
+            if (rain >= 60) {
+                return "🌧️";  // 高機率下雨
+            } else if (rain >= 40) {
+                return "🌦️";  // 可能下雨
+            }
+            
+            // 否則根據天氣描述顯示
+            if (!weather) return "🌤️";
+            if (weather.includes("晴")) {
+                return rain >= 30 ? "⛅" : "☀️";  // 有降雨機率時顯示局部多雲
+            }
             if (weather.includes("多雲")) return "⛅";
             if (weather.includes("陰")) return "☁️";
             if (weather.includes("雨")) return "🌧️";
@@ -485,11 +497,23 @@
         function getStoryAdvice(rainProb, maxTemp) {
             let umbrella = {
                 emoji: "☂️",
-                text: "帶把小傘吧"
+                text: "帶把傘吧"
             };
-            if (parseInt(rainProb) <= 30) {
+            
+            const rain = parseInt(rainProb);
+            if (rain >= 60) {
                 umbrella = {
                     emoji: "🌂",
+                    text: "今天會下雨喔"
+                };
+            } else if (rain >= 40) {
+                umbrella = {
+                    emoji: "☂️",
+                    text: "可能需要雨傘"
+                };
+            } else if (rain <= 30) {
+                umbrella = {
+                    emoji: "🌞",
                     text: "雨精靈今天休息"
                 };
             }
@@ -591,7 +615,7 @@
                 document.getElementById('currentWeather').innerHTML = `
                     <div class="weather-story-card">
                         <div class="stars">✨</div>
-                        <div class="weather-icon-large">${getWeatherIcon(today.weather)}</div>
+                        <div class="weather-icon-large">${getWeatherIcon(today.weather, today.rainProb)}</div>
                         <div class="temperature-display">
                             <div class="temp-number">${avgTemp}°</div>
                             <div class="weather-description">${today.weather}</div>
@@ -627,7 +651,7 @@
                     <div class="chapter-card ${isToday ? 'today-card' : ''}">
                         <div class="chapter-time">${isToday ? '今日' : weekday}</div>
                         <div class="chapter-date">${dateStr}</div>
-                        <div class="chapter-icon">${getWeatherIcon(dayGroup.weather)}</div>
+                        <div class="chapter-icon">${getWeatherIcon(dayGroup.weather, dayGroup.rainProb)}</div>
                         <div class="chapter-temp">${dayGroup.minTemp}° - ${dayGroup.maxTemp}°</div>
                         <div class="chapter-rain">雨滴機率 ${dayGroup.rainProb}%</div>
                     </div>
