@@ -458,12 +458,15 @@
         <div class="container">
             <div id="currentWeather"></div>
 
-            <h2 class="future-title">本週的天氣故事</h2>
+            <h2 class="future-title" id="futureForecastTitle">本週的天氣故事</h2>
             <div class="story-chapters" id="futureWeather"></div>
         </div>
 
         <footer class="story-footer">
             天氣的故事，每一頁都充滿驚喜 ☁️
+            <div style="font-size: 0.75rem; margin-top: 5px; opacity: 0.8;">
+                資料來源：中央氣象署 • 提供36小時天氣預報
+            </div>
         </footer>
     </div>
 
@@ -495,12 +498,17 @@
 
         // 童話風格的建議文字
         function getStoryAdvice(rainProb, maxTemp) {
+            // 確保 rainProb 和 maxTemp 是純數字
+            const rain = typeof rainProb === 'string' ? 
+                parseInt(rainProb.replace('%', '')) : parseInt(rainProb);
+            const temp = typeof maxTemp === 'string' ? 
+                parseInt(maxTemp.replace('°C', '')) : parseInt(maxTemp);
+            
             let umbrella = {
                 emoji: "☂️",
                 text: "帶把傘吧"
             };
             
-            const rain = parseInt(rainProb);
             if (rain >= 60) {
                 umbrella = {
                     emoji: "🌂",
@@ -522,12 +530,12 @@
                 emoji: "👕",
                 text: "輕便就好"
             };
-            if (parseInt(maxTemp) >= 28) {
+            if (temp >= 28) {
                 clothes = {
                     emoji: "🎽",
                     text: "涼爽的夏裝"
                 };
-            } else if (parseInt(maxTemp) <= 20) {
+            } else if (temp <= 20) {
                 clothes = {
                     emoji: "🧥",
                     text: "溫暖的外套"
@@ -566,22 +574,28 @@
                 
                 const group = dayGroups.get(dateKey);
                 group.forecasts.push(forecast);
-                group.maxTemp = Math.max(group.maxTemp, parseInt(forecast.maxTemp));
-                group.minTemp = Math.min(group.minTemp, parseInt(forecast.minTemp));
-                group.rainProb = Math.max(group.rainProb, parseInt(forecast.rain));
                 
-                // 使用中午時段的天氣作為當天代表
-                const hour = new Date(forecast.startTime).getHours();
-                if (hour >= 11 && hour <= 14) {
+                // 使用當天的實際最高最低溫 (移除 °C 符號)
+                const maxT = parseInt(forecast.maxTemp.replace('°C', ''));
+                const minT = parseInt(forecast.minTemp.replace('°C', ''));
+                if (maxT > group.maxTemp) group.maxTemp = maxT;
+                if (minT < group.minTemp) group.minTemp = minT;
+                
+                // 使用當天最高的降雨機率 (移除 % 符號)
+                const rain = parseInt(forecast.rain.replace('%', ''));
+                if (rain > group.rainProb) group.rainProb = rain;
+                
+                // 使用中午時段的天氣作為當天代表，或白天時段
+                const hour = date.getHours();
+                if ((hour >= 6 && hour <= 18) || !group.weather) {
                     group.weather = forecast.weather;
                 }
             });
             
-            // 如果沒有中午的天氣，使用第一個時段
-            dayGroups.forEach(group => {
-                if (!group.weather && group.forecasts.length > 0) {
-                    group.weather = group.forecasts[0].weather;
-                }
+            // 調試輸出
+            console.log("分組詳情：");
+            dayGroups.forEach((group, key) => {
+                console.log(`${key}: ${group.forecasts.length}個時段, 天氣:${group.weather}, 溫度:${group.minTemp}-${group.maxTemp}, 降雨:${group.rainProb}%`);
             });
             
             return Array.from(dayGroups.values());
@@ -591,20 +605,17 @@
             const forecasts = data.forecasts;
             const dayGroups = groupForecastsByDay(forecasts);
             
-            // 確保至少有7天的資料（如果API沒提供足夠資料，用最後一天填充）
-            while (dayGroups.length < 7 && dayGroups.length > 0) {
-                const lastDay = dayGroups[dayGroups.length - 1];
-                const newDate = new Date(lastDay.date);
-                newDate.setDate(newDate.getDate() + 1);
-                dayGroups.push({
-                    date: newDate,
-                    forecasts: lastDay.forecasts,
-                    maxTemp: lastDay.maxTemp,
-                    minTemp: lastDay.minTemp,
-                    weather: lastDay.weather,
-                    rainProb: lastDay.rainProb
+            // 調試：顯示分組後的資料
+            console.log("分組後的天數：", dayGroups.length);
+            dayGroups.forEach((group, index) => {
+                console.log(`第${index + 1}天：`, {
+                    date: group.date.toLocaleDateString(),
+                    weather: group.weather,
+                    temp: `${group.minTemp}° - ${group.maxTemp}°`,
+                    rain: group.rainProb + '%',
+                    forecastCount: group.forecasts.length
                 });
-            }
+            });
 
             const today = dayGroups[0];
             if (today) {
@@ -638,7 +649,7 @@
                 `;
             }
 
-            // 渲染一週預報
+            // 渲染可用的預報資料（不強制填充到7天）
             const futureContainer = document.getElementById('futureWeather');
             futureContainer.innerHTML = '';
 
@@ -662,8 +673,22 @@
             const now = new Date();
             const options = { month: 'long', day: 'numeric' };
             const dateStr = now.toLocaleDateString('zh-TW', options);
-            document.getElementById('dateDisplay').textContent = `從${dateStr}開始的一週天氣故事`;
-        }
+            const dayCount = dayGroups.length;
+            
+            // 更新標題
+            document.getElementById('dateDisplay').textContent = 
+                dayCount >= 7 ? `從${dateStr}開始的一週天氣故事` : `${dateStr}起${dayCount}天的天氣預報`;
+            
+            // 更新未來預報標題
+            const actualDays = dayGroups.length;
+            if (actualDays <= 2) {
+                document.getElementById('futureForecastTitle').textContent = '36小時天氣預報';
+            } else if (actualDays <= 3) {
+                document.getElementById('futureForecastTitle').textContent = '未來3天的天氣';
+            } else {
+                document.getElementById('futureForecastTitle').textContent = 
+                    actualDays >= 7 ? '本週的天氣故事' : `未來${actualDays}天的天氣`;
+            }
 
         async function fetchWeather() {
             try {
@@ -672,6 +697,10 @@
                 const [_, json] = await Promise.all([delayPromise, fetchPromise]);
 
                 if (json.success) {
+                    // 調試：顯示 API 返回的資料
+                    console.log("API 返回的資料：", json.data);
+                    console.log("預報筆數：", json.data.forecasts.length);
+                    
                     renderWeather(json.data);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('mainContent').style.display = 'block';
